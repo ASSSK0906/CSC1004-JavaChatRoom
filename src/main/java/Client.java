@@ -15,132 +15,129 @@ public class Client {
     private Socket s;
     private String id;
     private String username;
-    private static Scanner scn;
+    private static Scanner scn = new Scanner(System.in);
     private BufferedReader reader;
     private BufferedWriter writer;
-    private BufferedReader fileReader;
 
     public Client(Socket socket, String username) throws IOException {
         this.s = socket;
         this.username = username;
         this.reader = new BufferedReader(new InputStreamReader(this.s.getInputStream()));
         this.writer = new BufferedWriter(new OutputStreamWriter(this.s.getOutputStream()));
-        this.fileReader = new BufferedReader(new FileReader("chat_history.txt"));
-    }
-
-    private void assignedId(String id) {
-        this.id = id;
     }
 
     public void sendMessage() {
-        (new Thread(new Runnable() {
-            {
-                Objects.requireNonNull(Client.this);
-            }
+        (new Thread(() -> {
+            while(true) {
+                if (!s.isClosed()) {
+                    /*Step1: scan message from console typed in*/
+                    String msg = Client.scn.nextLine();
 
-            public void run() {
-                while(true) {
-                    if (!Client.this.s.isClosed()) {
-                        String msg = Client.scn.nextLine();
-                        if (!msg.equals("Quit")) {
-                            try {
-                                LocalDateTime now = LocalDateTime.now();
-                                DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm:ss");
-                                String formattedTime = now.format(formatter);
-                                Client.this.writer.write(Client.this.id + "|" + Client.this.username + ": " + msg + " (" + formattedTime + ")");
-                                Client.this.writer.newLine();
-                                Client.this.writer.flush();
-                                continue;
-                            } catch (IOException e) {
-                                System.out.println("Error client writing");
-                                e.printStackTrace();
-                                return;
-                            }
-                        }
 
+                    if (!msg.equals("Quit")) {
+                        /*Step2: add time stamp*/
                         try {
-                            Client.this.writer.write("Quit Request");
-                            Client.this.writer.newLine();
-                            Client.this.writer.flush();
-                            Client.this.s.close();
+                            LocalDateTime now = LocalDateTime.now();
+                            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm:ss");
+                            String formattedTime = now.format(formatter);
+                            /*Step3: send the message*/
+                            writer.write(id + "|" + username + ": " + msg + " (" + formattedTime + ")");
+                            writer.newLine();
+                            writer.flush();
+                            continue;
                         } catch (IOException e) {
-                            throw new RuntimeException(e);
+                            System.out.println("Error client writing");
+                            e.printStackTrace();
+                            return;
                         }
                     }
 
-                    return;
+                    /*SPECIAL CASE: quit message*/
+                    try {
+                        writer.write("Quit Request");
+                        writer.newLine();
+                        writer.flush();
+                        s.close();
+                        return;
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
                 }
+
+                return;
             }
         })).start();
     }
 
     public void listenForMessage() {
-        (new Thread(new Runnable() {
-            {
-                Objects.requireNonNull(Client.this);
-            }
+        (new Thread(() -> {
+            String msgFromGroupChat = "";
 
-            public void run() {
-                String msgFromGroupChat = "";
-
-                while(!Client.this.s.isClosed()) {
-                    try {
-                        if (msgFromGroupChat == null) {
-                            break;
-                        }
-
-                        msgFromGroupChat = Client.this.reader.readLine();
-                        System.out.println(msgFromGroupChat);
-                    } catch (IOException e) {
-                        if (Client.this.s.isClosed()) {
-                            System.out.println("Connection closed by server.");
-                        } else {
-                            System.out.println("Error client reading: " + e.getMessage());
-                            e.printStackTrace();
-                        }
+            while(!s.isClosed()) {
+                try {
+                    if (msgFromGroupChat == null) {
                         break;
                     }
+                    /*Step1: receive message from Server side*/
+                    msgFromGroupChat = reader.readLine();
+                    System.out.println(msgFromGroupChat);
+                } catch (IOException e) {
+                    if (s.isClosed()) {
+                        //This exception is for client quitting
+                        //Since when socket is being closed, listenForMessage thread is working
+                        //an exception will be created at the same time.
+                        System.out.println("Connection closed by server.");
+                    } else {
+                        System.out.println("Error client reading: " + e.getMessage());
+                        e.printStackTrace();
+                    }
+                    break;
                 }
-
             }
+
         })).start();
     }
 
     public static void main(String[] args) throws IOException {
         Socket s = new Socket("localhost", 999);
         System.out.println("Please enter your username for group chat: ");
+
+        /*Step1: Send out name to Server side, and Receive id from Server side*/
         String username = Client.scn.nextLine();
         Client c = new Client(s, username);
+
+        //send name
         c.writer.write(username);
         c.writer.newLine();
         c.writer.flush();
-        c.assignedId(c.reader.readLine());
+
+        //get id
+        c.id = c.reader.readLine();
         System.out.println("Welcome " + c.id + "|" + c.username + "!\nType 'Quit' to leave the chat room\n");
         System.out.println("Current active client: ");
 
+        /*Step2: receive client info(id + name) and print out active clients*/
         String clientInfo;
         while(!(clientInfo = c.reader.readLine()).equals("END")) {
             System.out.println(clientInfo + "\n");
         }
 
+        /*Step3: Read and print out chat history vai file*/
         System.out.println("Chat history of this room:");
         Scanner scn = new Scanner(new File("chat_history.txt"));
         String history = "";
-
+        //use Scanner to read line by line
         while(scn.hasNext()) {
             history = scn.nextLine();
             System.out.println(history);
         }
-
+        //special case: no history yet
         if (history.isEmpty()) {
             System.out.println("This room has no history now\n");
         }
 
+        /*Step4: send and listen threads start*/
         c.sendMessage();
         c.listenForMessage();
-    }
-
-    static {
-        scn = new Scanner(System.in);
     }
 }

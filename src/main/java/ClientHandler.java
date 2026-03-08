@@ -26,18 +26,12 @@ public class ClientHandler implements Runnable {
         this.writer = new BufferedWriter(new OutputStreamWriter(this.s.getOutputStream()));
     }
 
-    private static String getClientInfo(ClientHandler ch) {
-        String result = "";
-        if (!ch.s.isClosed()) {
-            result = result + "-" + ch.id + "|" + ch.username;
-        }
 
-        return result;
-    }
 
     public void run() {
+        /*Step1: generate id and send it to Client side*/
         this.id = String.valueOf(12345 + idCount.getAndIncrement());
-
+        //send out id
         try {
             this.writer.write(this.id);
             this.writer.newLine();
@@ -47,7 +41,7 @@ public class ClientHandler implements Runnable {
             e.printStackTrace();
             return;
         }
-
+        /*Step2: receive name from Client side*/
         try {
             this.username = this.reader.readLine();
         } catch (IOException e) {
@@ -56,6 +50,7 @@ public class ClientHandler implements Runnable {
             return;
         }
 
+        /*Step3: generate client info: id|name and send it to Client side*/
         for(ClientHandler ch : clientHandlers) {
             if (!ch.s.isClosed() && !ch.username.isEmpty()) {
                 try {
@@ -69,7 +64,7 @@ public class ClientHandler implements Runnable {
                 }
             }
         }
-
+        //Use "END" as a sign to stop reading
         try {
             this.writer.write("END");
             this.writer.newLine();
@@ -78,22 +73,28 @@ public class ClientHandler implements Runnable {
             throw new RuntimeException(e);
         }
 
+        /*Step4: receive message from Client side*/
         String messageFromClient;
-        for(; !this.s.isClosed(); this.broadcastMessage("[MESSAGE] " + messageFromClient)) {
-            messageFromClient = "";
-
+        for(; !s.isClosed(); broadcastMessage("[MESSAGE] " + messageFromClient)) {
             try {
-                messageFromClient = this.reader.readLine();
+                //read message
+                messageFromClient = reader.readLine();
+
+                /*SPECIAL CASE: quit request*/
                 if (messageFromClient.equals("Quit Request")) {
+                    //print out and send leaving message
                     String leaveNotice = "[SERVER: " + this.id + "|" + this.username + " has left the chat room !]";
                     System.out.println(leaveNotice);
-                    this.s.close();
-                    this.broadcastMessage(leaveNotice);
+                    s.close();
+                    broadcastMessage(leaveNotice);
                     break;
                 }
-
+                //print out message
                 System.out.println("[MESSAGE] " + messageFromClient);
-                this.server.logHistory("[HISTORY] " + messageFromClient);
+
+
+                /*Step4: record chat history*/
+                server.logHistory("[HISTORY] " + messageFromClient);
             } catch (IOException e) {
                 System.out.println("Error clientHandler reading");
                 e.printStackTrace();
@@ -103,10 +104,23 @@ public class ClientHandler implements Runnable {
 
     }
 
+    //helper method to format client info: id|name
+    private static String getClientInfo(ClientHandler ch) {
+        String result = "";
+        if (!ch.s.isClosed()) {
+            result = result + "-" + ch.id + "|" + ch.username;
+        }
+
+        return result;
+    }
+
+    //helper method to send message to all clients
     public void broadcastMessage(String messageToSend) {
+        //Iterate through active client
         for(ClientHandler ch : clientHandlers) {
             if (!ch.s.isClosed()) {
                 try {
+                    //send message
                     ch.writer.write(messageToSend);
                     ch.writer.newLine();
                     ch.writer.flush();

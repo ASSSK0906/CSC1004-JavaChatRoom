@@ -26,9 +26,11 @@ public class Server {
 
     public void startServer() throws IOException {
         while(!this.ss.isClosed()) {
+            //connect new socket from Client side
             Socket s = this.ss.accept();
             System.out.println("\nNew client request received : " + String.valueOf(s));
             ClientHandler clientHandler = new ClientHandler(s, this);
+            //wrap each clientHandler instance as thread
             Thread thread = new Thread(clientHandler);
             thread.start();
         }
@@ -41,7 +43,7 @@ public class Server {
 
     public static void main(String[] args) throws IOException {
         ServerSocket ss = new ServerSocket(999);
-        Server s = new Server(ss);
-        s.startServer();
+        Server server = new Server(ss);
+        server.startServer();
     }
 }
